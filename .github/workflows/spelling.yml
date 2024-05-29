@@ -66,12 +66,12 @@ on:
     branches:
       - "**"
     types:
-      - 'opened'
-      - 'reopened'
-      - 'synchronize'
+      - "opened"
+      - "reopened"
+      - "synchronize"
   issue_comment:
     types:
-      - 'created'
+      - "created"
 
 jobs:
   spelling:
@@ -80,7 +80,6 @@ jobs:
       contents: read
       pull-requests: read
       actions: read
-      security-events: write
     outputs:
       followup: ${{ steps.spelling.outputs.followup }}
     runs-on: ubuntu-latest
@@ -95,6 +94,7 @@ jobs:
         uses: check-spelling/check-spelling@prerelease
         with:
           suppress_push_for_open_pull_request: ${{ github.actor != 'dependabot[bot]' && 1 }}
+          report_title_suffix: spelling
           checkout: true
           check_file_names: 1
           spell_check_this: check-spelling/spell-check-this@prerelease
@@ -103,8 +103,7 @@ jobs:
           report-timing: 1
           warnings: bad-regex,binary-file,deprecated-feature,ignored-expect-variant,large-file,limited-references,no-newline-at-eof,noisy-file,non-alpha-in-dictionary,token-is-substring,unexpected-line-ending,whitespace-in-dictionary,minified-file,unsupported-configuration,no-files-to-check,unclosed-block-ignore-begin,unclosed-block-ignore-end
           experimental_apply_changes_via_bot: 1
-          use_sarif: ${{ (!github.event.pull_request || (github.event.pull_request.head.repo.full_name == github.repository)) && 1 }}
-          extra_dictionary_limit: 20
+          check_extra_dictionaries: ""
           extra_dictionaries: |
             cspell:software-terms/dict/softwareTerms.txt
 
@@ -121,6 +120,7 @@ jobs:
       - name: comment
         uses: check-spelling/check-spelling@prerelease
         with:
+          report_title_suffix: spelling
           checkout: true
           spell_check_this: check-spelling/spell-check-this@prerelease
           task: ${{ needs.spelling.outputs.followup }}
@@ -139,10 +139,63 @@ jobs:
       - name: comment
         uses: check-spelling/check-spelling@prerelease
         with:
+          experimental_apply_changes_via_bot: 1
+          report_title_suffix: spelling
           checkout: true
           spell_check_this: check-spelling/spell-check-this@prerelease
           task: ${{ needs.spelling.outputs.followup }}
-          experimental_apply_changes_via_bot: 1
+
+  restricted:
+    name: Restricted Patterns
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      followup: ${{ steps.spelling.outputs.followup }}
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event_name, 'pull_request') || github.event_name == 'push' }}
+    concurrency:
+      group: restricted-${{ github.event.pull_request.number || github.ref }}
+      # note: If you use only_check_changed_files, you do not want cancel-in-progress
+      cancel-in-progress: true
+    steps:
+      - name: check-spelling
+        id: spelling
+        uses: check-spelling/check-spelling@prerelease
+        with:
+          config: .github/actions/spelling-restricted
+          only_check_changed_files: true
+          suppress_push_for_open_pull_request: ${{ github.actor != 'dependabot[bot]' && 1 }}
+          notices: unrecognized-spelling,no-files-to-check
+          warnings: forbidden-pattern
+          include-advice: always
+          report_title_suffix: restricted-patterns
+          checkout: true
+          post_comment: 0
+          check_extra_dictionaries: ""
+
+  restricted-pr:
+    name: Restricted Patterns (PR)
+    # If you workflow isn't running on pull_request*, you can remove this job
+    runs-on: ubuntu-latest
+    needs: restricted
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    if: (success() || failure()) && needs.restricted.outputs.followup && contains(github.event_name, 'pull_request')
+    steps:
+      - name: comment
+        uses: check-spelling/check-spelling@prerelease
+        with:
+          config: .github/actions/spelling-restricted
+          notices: unrecognized-spelling,no-files-to-check
+          warnings: forbidden-pattern
+          include-advice: always
+          report_title_suffix: restricted-patterns
+          checkout: true
+          task: ${{ needs.restricted.outputs.followup }}
 
   update:
     name: Update PR
@@ -152,9 +205,9 @@ jobs:
       actions: read
     runs-on: ubuntu-latest
     if: ${{
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        contains(github.event.comment.body, '@check-spelling-bot apply')
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@check-spelling-bot apply')
       }}
     concurrency:
       group: spelling-update-${{ github.event.issue.number }}
@@ -164,5 +217,6 @@ jobs:
         uses: check-spelling/check-spelling@prerelease
         with:
           experimental_apply_changes_via_bot: 1
+          report_title_suffix: spelling
           checkout: true
           ssh_key: "${{ secrets.CHECK_SPELLING }}"
