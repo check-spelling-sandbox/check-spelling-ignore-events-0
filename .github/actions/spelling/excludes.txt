@@ -80,5 +80,5 @@ ignore$
 \.xpm$
 \.xz$
 \.zip$
-^\.github/actions/spelling/
+^\.github/actions/spelling
 ^\Q.github/workflows/spelling.yml\E$
